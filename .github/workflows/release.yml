@@ -99,12 +99,12 @@ jobs:
           git push origin "v${{ github.event.inputs.version }}"
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ github.event.inputs.version }}
-          release_name: Release v${{ github.event.inputs.version }}
+          name: Release v${{ github.event.inputs.version }}
           body: |
             ## Release v${{ github.event.inputs.version }}
 
@@ -134,7 +134,10 @@ jobs:
           prerelease: false
 
       - name: Notify team
+        if: success()
         uses: 8398a7/action-slack@v3
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
         with:
           status: success
           channel: "#bookstore-releases"
@@ -161,5 +164,4 @@ jobs:
                 ]
               }]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true

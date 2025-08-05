@@ -107,11 +107,15 @@ jobs:
           SPRING_RABBITMQ_PASSWORD: password
 
       - name: SonarQube analysis
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.SONAR_TOKEN != ''
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "SONAR_TOKEN not configured, skipping SonarQube analysis"
+            exit 0
+          fi
           ./mvnw sonar:sonar \
             -Dsonar.projectKey=bookstore-microservices \
             -Dsonar.organization=${{ github.repository_owner }} \
@@ -371,10 +375,11 @@ jobs:
       - name: Notify on Slack
         if: always()
         uses: 8398a7/action-slack@v3
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
         with:
           status: ${{ job.status }}
           channel: "#bookstore-deployments"
           webhook_url: ${{ secrets.SLACK_WEBHOOK }}
           fields: repo,message,commit,author,action,eventName,ref,workflow
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true
