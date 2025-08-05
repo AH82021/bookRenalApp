@@ -1,0 +1,157 @@
+name: Security and Dependency Scan
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    # Allow manual trigger
+
+env:
+  JAVA_VERSION: "17"
+
+jobs:
+  security-scan:
+    name: Security and Dependency Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: "temurin"
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+
+      - name: Run OWASP Dependency Check
+        run: |
+          ./mvnw org.owasp:dependency-check-maven:aggregate \
+            -DfailBuildOnCVSS=7 \
+            -DskipTestScope=true \
+            -DretireJsAnalyzerEnabled=false
+
+      - name: Upload OWASP report
+        uses: actions/upload-artifact@v3
+        with:
+          name: owasp-dependency-check-report
+          path: target/dependency-check-report.html
+
+      - name: Run Snyk vulnerability scan
+        if: github.repository_owner != 'dependabot'
+        uses: snyk/actions/maven@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --all-projects
+
+      - name: Upload Snyk results to GitHub Code Scanning
+        if: github.repository_owner != 'dependabot'
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: snyk.sarif
+
+      - name: Check for outdated dependencies
+        run: |
+          ./mvnw versions:display-dependency-updates > dependency-updates.txt
+          ./mvnw versions:display-plugin-updates > plugin-updates.txt
+
+      - name: Create issue for security vulnerabilities
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const title = 'Security vulnerabilities detected';
+            const body = `
+            ## Security Scan Results
+
+            The automated security scan has detected vulnerabilities in the project dependencies.
+
+            **Scan Details:**
+            - Date: ${{ github.event.head_commit.timestamp }}
+            - Commit: ${{ github.sha }}
+            - Workflow: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            Please review the OWASP dependency check report and Snyk results in the workflow artifacts.
+
+            **Action Required:**
+            1. Review the vulnerability report
+            2. Update affected dependencies
+            3. Test the application thoroughly
+            4. Create a security patch if necessary
+
+            /cc @${{ github.repository_owner }}
+            `;
+
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,vulnerability'
+            });
+
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes('Security vulnerabilities detected')
+            );
+
+            if (!existingIssue) {
+              github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['security', 'vulnerability', 'priority:high']
+              });
+            }
+
+  dependency-update:
+    name: Check for Dependency Updates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: "temurin"
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+
+      - name: Check for dependency updates
+        run: |
+          echo "## Dependency Updates Report" > dependency-report.md
+          echo "" >> dependency-report.md
+          echo "### Dependencies" >> dependency-report.md
+          ./mvnw versions:display-dependency-updates -DlogOutput=false | grep -E "^\[INFO\].*->.*" >> dependency-report.md || true
+          echo "" >> dependency-report.md
+          echo "### Plugins" >> dependency-report.md
+          ./mvnw versions:display-plugin-updates -DlogOutput=false | grep -E "^\[INFO\].*->.*" >> dependency-report.md || true
+
+      - name: Create pull request for dependency updates
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update dependencies"
+          title: "Automated Dependency Updates"
+          body-path: dependency-report.md
+          branch: automated-dependency-updates
+          delete-branch: true
+          labels: |
+            dependencies
+            automated
+          assignees: ${{ github.repository_owner }}

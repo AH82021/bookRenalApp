@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/your-org/bookRentApp/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 📖 Documentation
+    url: https://github.com/your-org/bookRentApp/wiki
+    about: Check our comprehensive documentation
+  - name: 🔒 Security Issues
+    url: mailto:security@yourcompany.com
+    about: Report critical security vulnerabilities privately
+  - name: 💼 Commercial Support
+    url: https://yourcompany.com/support
+    about: Get commercial support for the Book Store & Rental platform

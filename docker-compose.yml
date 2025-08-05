@@ -1,0 +1,158 @@
+version: "3.8"
+
+services:
+  # PostgreSQL for User Service
+  user-postgres:
+    image: postgres:15-alpine
+    container_name: user-postgres
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: bookstore_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - user_postgres_data:/var/lib/postgresql/data
+    networks:
+      - bookstore-network
+
+  # PostgreSQL for Book Service
+  book-postgres:
+    image: postgres:15-alpine
+    container_name: book-postgres
+    environment:
+      POSTGRES_DB: bookdb
+      POSTGRES_USER: bookstore_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - book_postgres_data:/var/lib/postgresql/data
+    networks:
+      - bookstore-network
+
+  # PostgreSQL for Inventory Service
+  inventory-postgres:
+    image: postgres:15-alpine
+    container_name: inventory-postgres
+    environment:
+      POSTGRES_DB: inventorydb
+      POSTGRES_USER: bookstore_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - inventory_postgres_data:/var/lib/postgresql/data
+    networks:
+      - bookstore-network
+
+  # PostgreSQL for Order Service
+  order-postgres:
+    image: postgres:15-alpine
+    container_name: order-postgres
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: bookstore_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+    volumes:
+      - order_postgres_data:/var/lib/postgresql/data
+    networks:
+      - bookstore-network
+
+  # PostgreSQL for Rental Service
+  rental-postgres:
+    image: postgres:15-alpine
+    container_name: rental-postgres
+    environment:
+      POSTGRES_DB: rentaldb
+      POSTGRES_USER: bookstore_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5436:5432"
+    volumes:
+      - rental_postgres_data:/var/lib/postgresql/data
+    networks:
+      - bookstore-network
+
+  # PostgreSQL for Report Service
+  report-postgres:
+    image: postgres:15-alpine
+    container_name: report-postgres
+    environment:
+      POSTGRES_DB: reportdb
+      POSTGRES_USER: bookstore_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5437:5432"
+    volumes:
+      - report_postgres_data:/var/lib/postgresql/data
+    networks:
+      - bookstore-network
+
+  # Redis for Inventory Service (caching)
+  redis:
+    image: redis:7-alpine
+    container_name: bookstore-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - bookstore-network
+
+  # RabbitMQ for messaging
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: bookstore-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: bookstore
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - bookstore-network
+
+  # Eureka Service Discovery
+  eureka-server:
+    image: springcloud/eureka
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    networks:
+      - bookstore-network
+
+  # LocalStack for AWS services emulation (optional for development)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: bookstore-localstack
+    environment:
+      SERVICES: s3,sqs,sns,secretsmanager
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - bookstore-network
+
+volumes:
+  user_postgres_data:
+  book_postgres_data:
+  inventory_postgres_data:
+  order_postgres_data:
+  rental_postgres_data:
+  report_postgres_data:
+  redis_data:
+  rabbitmq_data:
+  localstack_data:
+
+networks:
+  bookstore-network:
+    driver: bridge

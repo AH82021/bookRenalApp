@@ -1,0 +1,165 @@
+name: Release and Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 1.0.0)"
+        required: true
+        type: string
+      release_notes:
+        description: "Release notes"
+        required: false
+        type: string
+
+env:
+  JAVA_VERSION: "17"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: "temurin"
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ github.event.inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version format. Please use semantic versioning (e.g., 1.0.0)"
+            exit 1
+          fi
+
+      - name: Update version in POM files
+        run: |
+          ./mvnw versions:set -DnewVersion=${{ github.event.inputs.version }} ${{ env.MAVEN_CLI_OPTS }}
+          ./mvnw versions:commit ${{ env.MAVEN_CLI_OPTS }}
+
+      - name: Build and test
+        run: |
+          ./mvnw clean verify ${{ env.MAVEN_CLI_OPTS }}
+
+      - name: Build Docker images for release
+        run: |
+          for service in api-gateway user-service book-service inventory-service order-service rental-service notification-service report-service auth-service; do
+            echo "Building release image for $service..."
+            docker build -t ghcr.io/${{ github.repository_owner }}/bookstore/$service:${{ github.event.inputs.version }} ./$service/
+            docker build -t ghcr.io/${{ github.repository_owner }}/bookstore/$service:latest ./$service/
+          done
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push release Docker images
+        run: |
+          for service in api-gateway user-service book-service inventory-service order-service rental-service notification-service report-service auth-service; do
+            echo "Pushing release image for $service..."
+            docker push ghcr.io/${{ github.repository_owner }}/bookstore/$service:${{ github.event.inputs.version }}
+            docker push ghcr.io/${{ github.repository_owner }}/bookstore/$service:latest
+          done
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "## What's Changed" >> $GITHUB_OUTPUT
+          git log --pretty=format:"* %s (%h)" $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~10)..HEAD >> $GITHUB_OUTPUT || true
+          echo "" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Git tag
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -m "chore: bump version to ${{ github.event.inputs.version }}" || exit 0
+          git tag -a "v${{ github.event.inputs.version }}" -m "Release version ${{ github.event.inputs.version }}"
+          git push origin main
+          git push origin "v${{ github.event.inputs.version }}"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          release_name: Release v${{ github.event.inputs.version }}
+          body: |
+            ## Release v${{ github.event.inputs.version }}
+
+            ${{ github.event.inputs.release_notes }}
+
+            ### Docker Images
+            All services are available as Docker images:
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/api-gateway:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/user-service:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/book-service:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/inventory-service:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/order-service:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/rental-service:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/notification-service:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/report-service:${{ github.event.inputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/bookstore/auth-service:${{ github.event.inputs.version }}`
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ### Deployment
+            To deploy this version:
+            ```bash
+            # Update your deployment manifests to use version ${{ github.event.inputs.version }}
+            # Or use the latest tag for the most recent release
+            ```
+          draft: false
+          prerelease: false
+
+      - name: Notify team
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          channel: "#bookstore-releases"
+          fields: repo,message,commit,author
+          custom_payload: |
+            {
+              "text": "🚀 New release created!",
+              "attachments": [{
+                "color": "good",
+                "title": "Release v${{ github.event.inputs.version }}",
+                "title_link": "${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ github.event.inputs.version }}",
+                "text": "${{ github.event.inputs.release_notes }}",
+                "fields": [
+                  {
+                    "title": "Repository",
+                    "value": "${{ github.repository }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Version",
+                    "value": "v${{ github.event.inputs.version }}",
+                    "short": true
+                  }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

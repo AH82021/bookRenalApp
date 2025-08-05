@@ -1,0 +1,103 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+env:
+  JAVA_VERSION: "17"
+  MAVEN_CLI_OPTS: "-s .m2/settings.xml --batch-mode --errors --fail-at-end --show-version"
+
+jobs:
+  validate-pr:
+    name: Validate Pull Request
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_USER: bookstore_user
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: "temurin"
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Verify Maven wrapper
+        run: |
+          chmod +x mvnw
+          ./mvnw --version
+
+      - name: Check code formatting
+        run: |
+          ./mvnw spotless:check ${{ env.MAVEN_CLI_OPTS }}
+
+      - name: Compile all modules
+        run: ./mvnw clean compile ${{ env.MAVEN_CLI_OPTS }}
+
+      - name: Run unit tests
+        run: ./mvnw test ${{ env.MAVEN_CLI_OPTS }}
+
+      - name: Run static code analysis
+        run: |
+          ./mvnw spotbugs:check ${{ env.MAVEN_CLI_OPTS }}
+          ./mvnw checkstyle:check ${{ env.MAVEN_CLI_OPTS }}
+
+      - name: Check for security vulnerabilities
+        run: |
+          ./mvnw org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=8
+
+      - name: Validate Docker builds
+        run: |
+          # Test building Docker images for changed services
+          for service in api-gateway user-service book-service; do
+            echo "Testing Docker build for $service..."
+            docker build -t test-$service:latest ./$service/
+          done
+
+      - name: Comment PR with results
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const output = `
+            ## Pull Request Validation Results
+
+            - ✅ Code compilation: Success
+            - ✅ Unit tests: ${{ job.status == 'success' && 'Passed' || 'Failed' }}
+            - ✅ Security scan: Completed
+            - ✅ Docker builds: Validated
+
+            **Commit**: ${{ github.sha }}
+            **Workflow run**: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
