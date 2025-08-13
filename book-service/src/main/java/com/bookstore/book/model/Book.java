@@ -75,7 +75,7 @@ public class Book {
     @JoinTable(name = "book_categories",joinColumns = @JoinColumn (name = "book_id"), inverseJoinColumns = @JoinColumn (name = "category_id"))
     private Set<Category> categories = new HashSet<>();
 
-    @CreationTimestamp                                      //no one can change it once it's created
+    @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
