@@ -109,11 +109,3 @@ public class Book {
 
 }
 
-// study Entity relationship one to many, many to many, many to one
-// study CascadeType.All
-// Study builder design pattern
-
-// id = 1, title = be fearless
-// join (1 = 2)
-// id = 1, name = sci-fi, id = 2 name = classic
-// Book book = new Book();
