@@ -15,7 +15,7 @@ public interface CategoryService {
     /**
      * Create a new category
      * @param request the category creation request
-     * @return the created category response
+     * @return the creat ed category response
      */
     CategoryResponse createCategory(CategoryCreateRequest request);
 
