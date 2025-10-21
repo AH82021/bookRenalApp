@@ -1,8 +1,6 @@
 package com.bookstore.inventory.model;
 
 public enum InventoryStatus {
-
-
         ACTIVE,
         INACTIVE,
         DISCONTINUED,

@@ -1,11 +1,9 @@
 package com.bookstore.inventory.model;
-
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
 import java.time.LocalDateTime;
 
 @Entity
@@ -42,7 +40,6 @@ public class InventoryItem {
     @Column(name = "reserved_copies", nullable = false)
     @Builder.Default
     private Integer reservedCopies = 0;
-
     @Column(name = "rented_copies", nullable = false)
     @Builder.Default
     private Integer rentedCopies = 0;
